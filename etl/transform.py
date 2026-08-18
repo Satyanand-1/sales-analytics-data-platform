@@ -135,6 +135,7 @@ def run_transformations():
         CREATE OR REPLACE TABLE fact_sales AS
         SELECT 
             oi.order_item_id AS sale_id,
+            oi.order_id,
             o.customer_id,
             oi.product_id,
             oi.quantity,

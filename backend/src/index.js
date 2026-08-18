@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const env = require('./config/env');
 const healthRoutes = require('./routes/health.routes');
+const analyticsRoutes = require('./routes/analytics.routes');
 
 const app = express();
 
@@ -11,6 +12,7 @@ app.use(express.json());
 
 // Routes mount
 app.use('/api', healthRoutes);
+app.use('/api', analyticsRoutes);
 
 // Global Error Handler
 app.use((err, req, res, next) => {

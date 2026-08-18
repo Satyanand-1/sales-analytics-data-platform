@@ -36,6 +36,7 @@ Fact table recording transactional sales details.
 - **Source**: Joined `raw/order_items/` and `raw/orders/` parquet files.
 - **Columns**:
   - `sale_id` (BIGINT, Primary Key): Maps directly to `order_item_id`.
+  - `order_id` (BIGINT, Foreign Key referencing the original order)
   - `customer_id` (BIGINT, Foreign Key referencing `dim_customer`)
   - `product_id` (BIGINT, Foreign Key referencing `dim_product`)
   - `quantity` (BIGINT)
