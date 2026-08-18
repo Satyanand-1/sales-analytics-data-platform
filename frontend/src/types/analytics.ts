@@ -44,3 +44,46 @@ export interface PipelineState {
     fact_sales: number | null;
   };
 }
+
+// Operational Data Models
+export interface Customer {
+  customer_id?: number;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone?: string;
+  city: string;
+  created_at?: string;
+}
+
+export interface Product {
+  product_id?: number;
+  name: string;
+  sku: string;
+  category: string;
+  price: number;
+  created_at?: string;
+}
+
+export interface OrderItemInput {
+  product_id: number;
+  quantity: number;
+}
+
+export interface OrderInput {
+  customer_id: number;
+  order_date?: string;
+  status?: string;
+  items: OrderItemInput[];
+}
+
+export interface Order {
+  order_id: number;
+  order_date: string;
+  customer_name: string;
+  customer_email: string;
+  customer_city: string;
+  status: string;
+  total_amount: number;
+  item_count: number;
+}

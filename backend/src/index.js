@@ -4,6 +4,7 @@ const env = require('./config/env');
 const healthRoutes = require('./routes/health.routes');
 const analyticsRoutes = require('./routes/analytics.routes');
 const pipelineRoutes = require('./routes/pipeline.routes');
+const salesRoutes = require('./routes/sales.routes');
 
 const app = express();
 
@@ -15,6 +16,7 @@ app.use(express.json());
 app.use('/api', healthRoutes);
 app.use('/api', analyticsRoutes);
 app.use('/api', pipelineRoutes);
+app.use('/api', salesRoutes);
 
 // Global Error Handler
 app.use((err, req, res, next) => {

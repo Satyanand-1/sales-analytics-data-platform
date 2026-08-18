@@ -1,7 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
-const { queryDuckDb, connectDb, disconnectDb } = require('../config/db');
+const { queryDuckDb, setPipelineActive } = require('../config/db');
 
 // In-memory state tracking
 const pipelineState = {
@@ -131,11 +131,8 @@ async function runPipeline() {
     throw new Error('Pipeline is already running.');
   }
 
-  // --- PRE-RUN: Close DuckDB to release lock ---
-  pipelineState.progressMessage = 'Releasing database locks...';
-  await disconnectDb();
-
   isRunning = true;
+  setPipelineActive(true);
   pipelineState.status = 'running';
   pipelineState.progressMessage = 'Acquired process lock. Initializing pipeline...';
   pipelineState.startedAt = new Date().toISOString();
@@ -179,32 +176,31 @@ async function runPipeline() {
       pipelineState.progressMessage = 'Running Transformations: Loading and partitioning tables in DuckDB...';
       
       await executeScript(pythonPath, transformScript, (line) => {
-        // We log progress updates or handle logs as needed
         console.log(`[Transform] ${line}`);
+        
+        // Parse warehouse record counts from transform output logs
+        try {
+          const dimCustMatch = line.match(/Table 'dim_customer': (\d+) records loaded/);
+          if (dimCustMatch) {
+            pipelineState.recordCounts.dim_customer = parseInt(dimCustMatch[1], 10);
+          }
+          
+          const dimProdMatch = line.match(/Table 'dim_product': (\d+) records loaded/);
+          if (dimProdMatch) {
+            pipelineState.recordCounts.dim_product = parseInt(dimProdMatch[1], 10);
+          }
+          
+          const factSalesMatch = line.match(/Table 'fact_sales': (\d+) records loaded/);
+          if (factSalesMatch) {
+            pipelineState.recordCounts.fact_sales = parseInt(factSalesMatch[1], 10);
+          }
+        } catch (e) {
+          console.error('Error parsing transform counts from log:', e);
+        }
       });
 
-      // --- POST-RUN: Reopen DuckDB connection before verification queries ---
-      pipelineState.progressMessage = 'Reconnecting to database...';
-      connectDb();
-
-      // Wait 200ms for connection to establish
-      await new Promise((resolve) => setTimeout(resolve, 200));
-
-      // --- STEP 3: DuckDB Metrics Verification ---
-      pipelineState.progressMessage = 'Verifying loaded data records in DuckDB analytical warehouse...';
-      
-      try {
-        const dimCust = await queryDuckDb('SELECT COUNT(*) as cnt FROM dim_customer;');
-        const dimProd = await queryDuckDb('SELECT COUNT(*) as cnt FROM dim_product;');
-        const factSales = await queryDuckDb('SELECT COUNT(*) as cnt FROM fact_sales;');
-
-        pipelineState.recordCounts.dim_customer = Number(dimCust[0].cnt);
-        pipelineState.recordCounts.dim_product = Number(dimProd[0].cnt);
-        pipelineState.recordCounts.fact_sales = Number(factSales[0].cnt);
-      } catch (dbErr) {
-        console.error('Record count query verification failed:', dbErr);
-        // Tolerant record-count lookup: do not fail pipeline on count check error
-      }
+      // Transformation complete! Enable DuckDB queries again
+      setPipelineActive(false);
 
       // Success completion
       const nowStr = new Date().toISOString();
@@ -216,9 +212,6 @@ async function runPipeline() {
     } catch (err) {
       console.error('Data pipeline execution failed:', err);
       
-      // Reconnect DuckDB in case of failure so analytical APIs are back online
-      connectDb();
-
       pipelineState.status = 'failed';
       pipelineState.progressMessage = 'Pipeline execution failed.';
       pipelineState.completedAt = new Date().toISOString();
@@ -229,8 +222,7 @@ async function runPipeline() {
         step: pipelineState.progressMessage
       };
     } finally {
-      // Reconnect if not already reconnected
-      connectDb();
+      setPipelineActive(false);
       isRunning = false;
     }
   })();
