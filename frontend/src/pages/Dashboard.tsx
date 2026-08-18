@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { fetchRevenueSummary, fetchDailySales } from '../services/api';
-import type { RevenueSummary, DailySales } from '../types/analytics';
+import { fetchRevenueSummary, fetchDailySales, fetchSalesByProduct } from '../services/api';
+import type { RevenueSummary, DailySales, ProductSales } from '../types/analytics';
 import {
   ResponsiveContainer,
   AreaChart,
   Area,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -40,35 +42,71 @@ const CustomTooltip: React.FC<CustomTooltipProps> = ({ active, payload, label })
   return null;
 };
 
+const ProductTooltip: React.FC<CustomTooltipProps> = ({ active, payload }) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload as ProductSales;
+    return (
+      <div className="custom-tooltip">
+        <p className="tooltip-date" style={{ textTransform: 'uppercase', fontWeight: 700 }}>{data.category}</p>
+        <p className="tooltip-revenue" style={{ color: '#10b981' }}>
+          Revenue: {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(data.totalRevenue)}
+        </p>
+        <p className="tooltip-orders">
+          Units Sold: {data.totalUnits}
+        </p>
+      </div>
+    );
+  }
+  return null;
+};
+
 const Dashboard: React.FC = () => {
+  // Main metrics & Daily sales states
   const [revenueSummary, setRevenueSummary] = useState<RevenueSummary | null>(null);
   const [dailySales, setDailySales] = useState<DailySales[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  const [mainLoading, setMainLoading] = useState<boolean>(true);
+  const [mainError, setMainError] = useState<string | null>(null);
 
-  const loadData = async () => {
+  // Independent Product analytics states
+  const [productSales, setProductSales] = useState<ProductSales[]>([]);
+  const [productLoading, setProductLoading] = useState<boolean>(true);
+  const [productError, setProductError] = useState<string | null>(null);
+
+  const loadMainData = async () => {
     try {
-      setLoading(true);
-      setError(null);
-      
-      // Fetch summary and daily sales concurrently
+      setMainLoading(true);
+      setMainError(null);
       const [summaryData, dailyData] = await Promise.all([
         fetchRevenueSummary(),
         fetchDailySales()
       ]);
-      
       setRevenueSummary(summaryData);
       setDailySales(dailyData);
     } catch (err: any) {
-      console.error('Error fetching analytics:', err);
-      setError(err.message || 'Failed to load analytics data. Please try again.');
+      console.error('Error fetching main dashboard data:', err);
+      setMainError(err.message || 'Failed to load main dashboard metrics.');
     } finally {
-      setLoading(false);
+      setMainLoading(false);
+    }
+  };
+
+  const loadProductData = async () => {
+    try {
+      setProductLoading(true);
+      setProductError(null);
+      const data = await fetchSalesByProduct();
+      setProductSales(data);
+    } catch (err: any) {
+      console.error('Error fetching product data:', err);
+      setProductError(err.message || 'Failed to load product analytics.');
+    } finally {
+      setProductLoading(false);
     }
   };
 
   useEffect(() => {
-    loadData();
+    loadMainData();
+    loadProductData();
   }, []);
 
   // Format currency helper (Indian Rupee)
@@ -92,8 +130,8 @@ const Dashboard: React.FC = () => {
     return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
   };
 
-  // Format currency shorthand for Y-Axis
-  const formatCurrencyYAxis = (value: number) => {
+  // Format currency shorthand for Y/X-Axis
+  const formatCurrencyShorthand = (value: number) => {
     if (value >= 10000000) return `₹${(value / 10000000).toFixed(1)}Cr`;
     if (value >= 100000) return `₹${(value / 100000).toFixed(1)}L`;
     if (value >= 1000) return `₹${(value / 1000).toFixed(0)}K`;
@@ -107,21 +145,22 @@ const Dashboard: React.FC = () => {
         <p>Real-time business performance metrics from your Analytical Data Warehouse</p>
       </header>
 
-      {loading && (
-        <div className="loading-state">
-          <p>Loading analytics data...</p>
+      {/* Main Content Area (KPIs & Daily Sales Chart) */}
+      {mainLoading && (
+        <div className="loading-state" style={{ marginBottom: '2rem' }}>
+          <p>Loading summary analytics data...</p>
         </div>
       )}
 
-      {error && (
-        <div className="error-state">
-          <h3>Error Loading Data</h3>
-          <p>{error}</p>
-          <button className="retry-btn" onClick={loadData}>Retry</button>
+      {mainError && (
+        <div className="error-state" style={{ marginBottom: '2rem' }}>
+          <h3>Error Loading Summary Data</h3>
+          <p>{mainError}</p>
+          <button className="retry-btn" onClick={loadMainData}>Retry</button>
         </div>
       )}
 
-      {!loading && !error && (
+      {!mainLoading && !mainError && (
         <>
           {/* KPI Grid */}
           {revenueSummary && (
@@ -149,7 +188,7 @@ const Dashboard: React.FC = () => {
           )}
 
           {/* Daily Sales Chart */}
-          <div className="chart-card">
+          <div className="chart-card" style={{ marginBottom: '2.5rem' }}>
             <h2 className="chart-title">Daily Sales Trend</h2>
             <p className="chart-subtitle">Daily revenue trends and order counts over time</p>
             
@@ -181,7 +220,7 @@ const Dashboard: React.FC = () => {
                       dy={10}
                     />
                     <YAxis 
-                      tickFormatter={formatCurrencyYAxis}
+                      tickFormatter={formatCurrencyShorthand}
                       tickLine={false}
                       axisLine={false}
                       stroke="#94a3b8"
@@ -203,6 +242,111 @@ const Dashboard: React.FC = () => {
           </div>
         </>
       )}
+
+      {/* Product Analytics Section (Independent Loading & Error Handling) */}
+      <div className="product-analytics-section" style={{ marginTop: '2.5rem' }}>
+        {productLoading && (
+          <div className="loading-state">
+            <p>Loading product performance metrics...</p>
+          </div>
+        )}
+
+        {productError && (
+          <div className="error-state">
+            <h3>Error Loading Product Analytics</h3>
+            <p>{productError}</p>
+            <button className="retry-btn" onClick={loadProductData}>Retry</button>
+          </div>
+        )}
+
+        {!productLoading && !productError && (
+          <div className="chart-card">
+            <h2 className="chart-title">Product Performance Analytics</h2>
+            <p className="chart-subtitle">Revenue rankings and units sold for all catalog products</p>
+            
+            {productSales.length === 0 ? (
+              <div className="empty-chart-state">
+                <p>No product sales data available.</p>
+              </div>
+            ) : (
+              <div className="product-grid">
+                {/* Horizontal Bar Chart (Top 10 Products) */}
+                <div className="product-chart-col">
+                  <h3 style={{ margin: '0 0 1rem 0', fontSize: '1rem', color: '#1e293b', fontWeight: 600 }}>Top 10 Products by Revenue</h3>
+                  <div className="chart-wrapper">
+                    <ResponsiveContainer width="100%" height={380}>
+                      <BarChart
+                        data={productSales.slice(0, 10)}
+                        layout="vertical"
+                        margin={{ top: 5, right: 10, left: 30, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+                        <XAxis 
+                          type="number"
+                          tickFormatter={formatCurrencyShorthand}
+                          tickLine={false}
+                          axisLine={false}
+                          stroke="#94a3b8"
+                          fontSize={11}
+                        />
+                        <YAxis 
+                          type="category"
+                          dataKey="productName" 
+                          tickLine={false}
+                          axisLine={false}
+                          stroke="#334155"
+                          fontSize={11}
+                          width={110}
+                        />
+                        <Tooltip content={<ProductTooltip />} />
+                        <Bar 
+                          dataKey="totalRevenue" 
+                          fill="#10b981" 
+                          radius={[0, 4, 4, 0]}
+                          barSize={18}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Scrollable Ranking Table (All 30 Products) */}
+                <div className="product-table-col">
+                  <h3 style={{ margin: '0 0 1rem 0', fontSize: '1rem', color: '#1e293b', fontWeight: 600 }}>All Products Detailed Ranking</h3>
+                  <div className="table-scroll-container">
+                    <table className="ranking-table">
+                      <thead>
+                        <tr>
+                          <th>Rank</th>
+                          <th>Product Name</th>
+                          <th>Category</th>
+                          <th>Units</th>
+                          <th>Revenue</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {productSales.map((item, idx) => (
+                          <tr key={item.productName}>
+                            <td>
+                              <span className={`rank-badge rank-${idx + 1 <= 3 ? idx + 1 : 'default'}`}>
+                                {idx + 1}
+                              </span>
+                            </td>
+                            <td className="product-name-cell">{item.productName}</td>
+                            <td><span className="category-tag">{item.category}</span></td>
+                            <td className="number-cell">{formatNumber(item.totalUnits)}</td>
+                            <td className="number-cell font-bold">{formatCurrency(item.totalRevenue)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 };
