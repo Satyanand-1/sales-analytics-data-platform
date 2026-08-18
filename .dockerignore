@@ -1,0 +1,6 @@
+.env
+.git
+.venv
+node_modules
+**/node_modules
+data/sales_warehouse.db
