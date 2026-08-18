@@ -1,6 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { fetchRevenueSummary, fetchDailySales, fetchSalesByProduct, fetchSalesByCity } from '../services/api';
-import type { RevenueSummary, DailySales, ProductSales, CitySales } from '../types/analytics';
+import { 
+  fetchRevenueSummary, 
+  fetchDailySales, 
+  fetchSalesByProduct, 
+  fetchSalesByCity,
+  fetchPipelineStatus,
+  triggerPipeline
+} from '../services/api';
+import type { 
+  RevenueSummary, 
+  DailySales, 
+  ProductSales, 
+  CitySales,
+  PipelineState
+} from '../types/analytics';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -98,6 +111,10 @@ const Dashboard: React.FC = () => {
   const [cityLoading, setCityLoading] = useState<boolean>(true);
   const [cityError, setCityError] = useState<string | null>(null);
 
+  // In-memory Pipeline execution states
+  const [pipeline, setPipelineState] = useState<PipelineState | null>(null);
+  const [triggerError, setTriggerError] = useState<string | null>(null);
+
   const loadMainData = async () => {
     try {
       setMainLoading(true);
@@ -144,11 +161,57 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  const loadPipelineStatus = async () => {
+    try {
+      const state = await fetchPipelineStatus();
+      setPipelineState(state);
+      return state;
+    } catch (err: any) {
+      console.error('Error loading pipeline status:', err);
+    }
+  };
+
+  const handleRunPipeline = async () => {
+    try {
+      setTriggerError(null);
+      const res = await triggerPipeline();
+      setPipelineState(res.state);
+    } catch (err: any) {
+      console.error('Error triggering pipeline:', err);
+      const errMsg = err.response?.data?.message || err.message || 'Failed to trigger data pipeline.';
+      setTriggerError(errMsg);
+    }
+  };
+
+  // Initial mount load
   useEffect(() => {
     loadMainData();
     loadProductData();
     loadCityData();
+    loadPipelineStatus();
   }, []);
+
+  // Polling loop for active background executions
+  useEffect(() => {
+    let interval: any = null;
+    if (pipeline && pipeline.status === 'running') {
+      interval = setInterval(async () => {
+        const state = await loadPipelineStatus();
+        if (state && (state.status === 'success' || state.status === 'failed')) {
+          clearInterval(interval);
+          // Auto refresh all active dashboard charts only on success
+          if (state.status === 'success') {
+            loadMainData();
+            loadProductData();
+            loadCityData();
+          }
+        }
+      }, 1500);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [pipeline?.status]);
 
   // Format currency helper (Indian Rupee)
   const formatCurrency = (value: number) => {
@@ -185,6 +248,67 @@ const Dashboard: React.FC = () => {
         <h1>Sales Analytics Dashboard</h1>
         <p>Real-time business performance metrics from your Analytical Data Warehouse</p>
       </header>
+
+      {/* Pipeline Controller Runner Component */}
+      <div className="chart-card" style={{ marginBottom: '2rem', padding: '1.5rem' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
+          <div>
+            <h2 className="chart-title" style={{ margin: 0, fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              Analytical Data Pipeline
+              {pipeline && (
+                <span className={`status-badge status-${pipeline.status}`}>
+                  {pipeline.status === 'running' ? 'Running' : pipeline.status === 'success' ? 'Success' : pipeline.status === 'failed' ? 'Failed' : 'Idle'}
+                </span>
+              )}
+            </h2>
+            <p className="chart-subtitle" style={{ margin: '0.25rem 0 0 0', fontSize: '0.875rem' }}>
+              {pipeline ? pipeline.progressMessage : 'Resolving execution status...'}
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+            {pipeline?.lastSuccessfulRun && (
+              <span className="last-run-timestamp">
+                Last Run: {new Date(pipeline.lastSuccessfulRun).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              </span>
+            )}
+            <button
+              className={`run-pipeline-btn ${pipeline?.status === 'running' ? 'btn-loading' : ''}`}
+              onClick={handleRunPipeline}
+              disabled={pipeline?.status === 'running'}
+            >
+              {pipeline?.status === 'running' ? 'Executing Pipeline...' : 'Run Data Pipeline'}
+            </button>
+          </div>
+        </div>
+
+        {/* Processed Counts Display */}
+        {pipeline && (pipeline.recordCounts.customers !== null || pipeline.recordCounts.dim_customer !== null) && (
+          <div className="pipeline-counts-grid">
+            {pipeline.recordCounts.customers !== null && (
+              <div className="counts-col">
+                <strong>Raw Ingested:</strong> {pipeline.recordCounts.customers} customers | {pipeline.recordCounts.products} products | {pipeline.recordCounts.orders} orders | {pipeline.recordCounts.orderItems} items
+              </div>
+            )}
+            {pipeline.recordCounts.dim_customer !== null && (
+              <div className="counts-col">
+                <strong>Warehouse Loaded:</strong> {pipeline.recordCounts.dim_customer} dim_customer | {pipeline.recordCounts.dim_product} dim_product | {pipeline.recordCounts.fact_sales} fact_sales
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Pipeline Failures Display */}
+        {(triggerError || (pipeline && pipeline.error)) && (
+          <div className="pipeline-error-box">
+            <h4>Pipeline Execution Failed</h4>
+            <p className="error-msg-detail">{triggerError || pipeline?.error?.message}</p>
+            {pipeline?.error?.step && (
+              <p className="error-step-detail">Failed during step: <em>{pipeline.error.step}</em></p>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Main Content Area (KPIs & Daily Sales Chart) */}
       {mainLoading && (

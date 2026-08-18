@@ -26,3 +26,21 @@ export interface DailySales {
   totalOrders: number;
   totalRevenue: number;
 }
+
+export interface PipelineState {
+  status: 'idle' | 'running' | 'success' | 'failed';
+  progressMessage: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  lastSuccessfulRun: string | null;
+  error: { message: string; step: string } | null;
+  recordCounts: {
+    customers: number | null;
+    products: number | null;
+    orders: number | null;
+    orderItems: number | null;
+    dim_customer: number | null;
+    dim_product: number | null;
+    fact_sales: number | null;
+  };
+}

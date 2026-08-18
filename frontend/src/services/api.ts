@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { RevenueSummary, ProductSales, CitySales, DailySales } from '../types/analytics';
+import type { RevenueSummary, ProductSales, CitySales, DailySales, PipelineState } from '../types/analytics';
 
 // Set up base Axios instance pointing to our Node.js Express backend
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
@@ -28,6 +28,16 @@ export const fetchSalesByCity = async (): Promise<CitySales[]> => {
 
 export const fetchDailySales = async (): Promise<DailySales[]> => {
   const response = await api.get<DailySales[]>('/analytics/daily-sales');
+  return response.data;
+};
+
+export const fetchPipelineStatus = async (): Promise<PipelineState> => {
+  const response = await api.get<PipelineState>('/pipeline/status');
+  return response.data;
+};
+
+export const triggerPipeline = async (): Promise<{ message: string; state: PipelineState }> => {
+  const response = await api.post<{ message: string; state: PipelineState }>('/pipeline/run');
   return response.data;
 };
 
