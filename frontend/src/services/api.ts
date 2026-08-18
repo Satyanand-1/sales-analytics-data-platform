@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { RevenueSummary, ProductSales, CitySales, DailySales } from '../types/analytics';
+import type { RevenueSummary, ProductSales, CitySales, DailySales } from '../types/analytics';
 
 // Set up base Axios instance pointing to our Node.js Express backend
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
